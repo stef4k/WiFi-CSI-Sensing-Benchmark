@@ -37,7 +37,7 @@ def load_data_n_model(dataset_name, model_name, root):
         elif model_name == 'RNN':
             print("using model: RNN")
             model = UT_HAR_RNN()
-            train_epoch = 3000
+            train_epoch = 300
         elif model_name == 'GRU':
             print("using model: GRU")
             model = UT_HAR_GRU()

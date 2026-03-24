@@ -51,6 +51,11 @@ We also offer [pre-trained weights](https://drive.google.com/drive/folders/1NBVe
 To run models with supervised learning (train & test):  
 Run: `python run.py --model [model name] --dataset [dataset name]`  
 
+Optional output arguments:
+- `--results-dir [path]` (default: `results`)
+- `--checkpoint-name [filename]` (default: `model_checkpoint.pt`)
+- `--seed [int]` (default: `42`)
+
 You can choose [model name] from the model list below
 - MLP
 - LeNet
@@ -71,6 +76,38 @@ You can choose [dataset name] from the dataset list below
 - Widar
 
 *Example: `python run.py --model ResNet18 --dataset NTU-Fi_HAR`*
+
+Training artifacts are saved in:
+`results/[model name]/[dataset name]/`
+
+Files generated per run:
+- `results.csv` (run summary: accuracy/loss, macro/weighted/micro precision/recall/F1, balanced accuracy, timing)
+- `per_class_metrics.csv` (precision/recall/F1/support per class)
+- `confusion_matrix.csv`
+- `train_history.csv` (epoch-wise train loss/accuracy/time)
+- `model_checkpoint.pt`
+
+Global comparison file:
+- `results/benchmark_summary.csv` (one appended row per run across all models and datasets)
+
+### SLURM Sweep (Ruche)
+Run one SLURM job per model, and each job trains all 4 datasets:
+
+1. Create log folders once:
+`mkdir -p slurm_logs/out slurm_logs/err`
+2. Submit all model jobs:
+`bash slurm/submit_all_models.sh`
+
+This submits 11 jobs (`MLP ... ViT`) using:
+- `--partition=gpu`
+- `--gres=gpu:1`
+- `--cpus-per-task=8`
+- `--mem=64G`
+- `--time=24:00:00`
+
+Manual single-model submission:
+`sbatch --export=ALL,MODEL=MLP slurm/train_model_all_datasets.slurm`
+
 ### Unsupervised Learning
 To run models with unsupervised (self-supervised) learning (train on **NTU-Fi HAR** & test on **NTU-Fi HumanID**):  
 Run: `python self_supervised.py --model [model name] ` 

@@ -1,0 +1,4 @@
+Data/*
+results/
+slurm_logs/
+__pycache__/
