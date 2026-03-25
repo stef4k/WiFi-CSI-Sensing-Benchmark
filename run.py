@@ -267,6 +267,8 @@ def main():
     criterion = nn.CrossEntropyLoss()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+    total_params, trainable_params = count_parameters(model)
+    non_trainable_params = total_params - trainable_params
 
     history, training_time_s = train(
         model=model,
