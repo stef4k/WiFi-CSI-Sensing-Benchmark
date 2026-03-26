@@ -176,43 +176,43 @@ def load_data_n_model(dataset_name, model_name, root):
         elif model_name == 'LeNet':
             print("using model: LeNet")
             model = Widar_LeNet(num_classes)
-            train_epoch = 100 #40
+            train_epoch = 50 #100
         elif model_name == 'ResNet18':
             print("using model: ResNet18")
             model = Widar_ResNet18(num_classes)
-            train_epoch = 100
+            train_epoch = 50 #100
         elif model_name == 'ResNet50':
             print("using model: ResNet50")
             model = Widar_ResNet50(num_classes)
-            train_epoch = 100 #40
+            train_epoch = 40 #100
         elif model_name == 'ResNet101':
             print("using model: ResNet101")
             model = Widar_ResNet101(num_classes)
-            train_epoch = 100
+            train_epoch = 40 #100
         elif model_name == 'RNN':
             print("using model: RNN")
             model = Widar_RNN(num_classes)
-            train_epoch = 500
+            train_epoch = 60  #500
         elif model_name == 'GRU':
             print("using model: GRU")
             model = Widar_GRU(num_classes)
-            train_epoch = 200 
+            train_epoch = 50 #200
         elif model_name == 'LSTM':
             print("using model: LSTM")
             model = Widar_LSTM(num_classes)
-            train_epoch = 200 #20
+            train_epoch = 50 #200
         elif model_name == 'BiLSTM':
             print("using model: BiLSTM")
             model = Widar_BiLSTM(num_classes)
-            train_epoch = 200
+            train_epoch = 50 #200
         elif model_name == 'CNN+GRU':
             print("using model: CNN+GRU")
             model = Widar_CNN_GRU(num_classes)
-            train_epoch = 200 #20
+            train_epoch = 50 #200
         elif model_name == 'ViT':
             print("using model: ViT")
             model = Widar_ViT(num_classes=num_classes)
-            train_epoch = 200
+            train_epoch = 60 #200
         return train_loader, test_loader, model, train_epoch
 
 

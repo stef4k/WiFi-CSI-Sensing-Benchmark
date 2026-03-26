@@ -33,4 +33,4 @@ cd "$ROOT_DIR"
 echo "Running MODEL=$MODEL DATASET=$DATASET"
 echo "Results directory: $RESULTS_DIR"
 
-python run.py --model "$MODEL" --dataset "$DATASET" --results-dir "$RESULTS_DIR"
+python -u run.py --model "$MODEL" --dataset "$DATASET" --results-dir "$RESULTS_DIR"

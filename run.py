@@ -18,6 +18,14 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
+def count_parameters(model):
+    total_params = sum(param.numel() for param in model.parameters())
+    trainable_params = sum(
+        param.numel() for param in model.parameters() if param.requires_grad
+    )
+    return total_params, trainable_params
+
+
 def train(model, tensor_loader, num_epochs, learning_rate, criterion, device):
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -61,7 +69,8 @@ def train(model, tensor_loader, num_epochs, learning_rate, criterion, device):
         print(
             "Epoch:{}, Accuracy:{:.4f},Loss:{:.9f}".format(
                 epoch + 1, float(epoch_accuracy), float(epoch_loss)
-            )
+            ),
+            flush=True,
         )
 
     training_time_s = time.perf_counter() - train_start
@@ -177,7 +186,8 @@ def test(model, tensor_loader, criterion, device):
     print(
         "validation accuracy:{:.4f}, loss:{:.5f}".format(
             float(overall_metrics["accuracy"]), float(test_loss)
-        )
+        ),
+        flush=True,
     )
     return overall_metrics, per_class_metrics, confusion, float(test_loss)
 
@@ -344,8 +354,8 @@ def main():
     write_rows_to_csv(os.path.join(output_dir, "train_history.csv"), history)
     save_confusion_matrix(os.path.join(output_dir, "confusion_matrix.csv"), confusion)
 
-    print("saved artifacts in: {}".format(output_dir))
-    print("checkpoint: {}".format(checkpoint_path))
+    print("saved artifacts in: {}".format(output_dir), flush=True)
+    print("checkpoint: {}".format(checkpoint_path), flush=True)
     return
 
 
