@@ -1,3 +1,4 @@
 Data/*
 __pycache__/
 *.pt
+slurm_logs/
