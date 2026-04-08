@@ -1,0 +1,12 @@
+model,dataset,total_params,params_human,note
+MLP,esp-fi-har,26757127,26.76M,
+LeNet,esp-fi-har,273319,273.3K,
+RNN,esp-fi-har,57223,57.2K,
+GRU,esp-fi-har,169863,169.9K,
+LSTM,esp-fi-har,226183,226.2K,
+BiLSTM,esp-fi-har,583431,583.4K,
+CNN+GRU,esp-fi-har,155399,155.4K,
+ResNet18,esp-fi-har,11181005,11.18M,
+ResNet50,esp-fi-har,23548877,23.55M,
+ResNet101,esp-fi-har,42567117,42.57M,
+ViT,esp-fi-har,158507,158.5K,

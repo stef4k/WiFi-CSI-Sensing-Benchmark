@@ -1,0 +1,8 @@
+true\pred,class_0,class_1,class_2,class_3,class_4,class_5,class_6
+class_0,26,23,3,6,2,2,2
+class_1,23,32,4,0,2,2,1
+class_2,6,2,25,7,8,9,7
+class_3,3,2,10,31,9,2,7
+class_4,2,1,14,5,31,7,4
+class_5,7,3,8,13,11,17,5
+class_6,3,2,3,8,2,4,42

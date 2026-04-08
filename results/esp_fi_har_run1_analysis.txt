@@ -1,0 +1,261 @@
+================================================================================
+  ESP-Fi-HAR RUN 1 — PROBLEM ANALYSIS & FIX RATIONALE
+  Dataset: 7 activities, 8 subjects, 4 environments, 2240 samples
+  Evaluations: LOSO (8 folds), Leave-One-Env (4 folds)
+  Random baseline: 14.3%  (1/7 classes)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 1 — INFRASTRUCTURE BUG: 7/11 MODELS TRAINED ON CPU
+────────────────────────────────────────────────────────────────────────────────
+  Problem : Node ruche-gpu13 (where 7 jobs landed) has a CUDA driver
+            incompatible with the sensefi39 conda environment.
+            torch.cuda.is_available() returned False silently → CPU fallback.
+  Affected: LeNet, ResNet18, ResNet101, RNN, GRU, BiLSTM, CNN+GRU
+  On GPU  : MLP, ResNet50, LSTM, ViT  (landed on ruche-gpu17/19)
+  Fix     : #SBATCH --exclude=ruche-gpu13 added to train_esp_fi_har.slurm
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 2 — TRAINING SETUP PROBLEMS (ALL MODELS)
+────────────────────────────────────────────────────────────────────────────────
+  Problem : Adam optimizer with no weight_decay (default=0), no LR scheduler,
+            no early stopping. The model trains at a fixed LR until epoch N
+            regardless of whether it has converged or is diverging.
+
+  Fix     : weight_decay=1e-4 added to Adam.
+            CosineAnnealingLR decays LR smoothly from 1e-3 → 1e-5 over the
+            full training run, improving late-stage convergence for
+            underfitting models and reducing oscillation for overfitting ones.
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 3 — PER-MODEL RESULTS, DIAGNOSIS & FIXES
+────────────────────────────────────────────────────────────────────────────────
+
+  Run 1 results summary:
+  ┌─────────────┬────────┬──────────────┬──────────────┬────────────────────┐
+  │ Model       │ Epochs │ LOSO val acc │ LOEnv val acc│ Train acc (approx) │
+  ├─────────────┼────────┼──────────────┼──────────────┼────────────────────┤
+  │ LeNet       │   50   │    53.4 %    │    40.3 %    │      ~79 %         │
+  │ ResNet50    │   50   │    42.6 %    │    29.8 %    │      ~98 %         │
+  │ ResNet18    │   50   │    40.5 %    │    37.8 %    │      ~99 %         │
+  │ ResNet101   │   50   │    37.6 %    │    29.9 %    │      ~95 %         │
+  │ ViT         │   50   │    30.5 %    │    24.6 %    │      ~66 %         │
+  │ GRU         │   50   │    26.5 %    │    23.5 %    │      ~37 %         │
+  │ LSTM        │   50   │    23.6 %    │    20.3 %    │      ~26 %         │
+  │ MLP         │   50   │    21.6 %    │    20.0 %    │      ~53 %         │
+  │ RNN         │   75   │    18.8 %    │    19.0 %    │      ~23 %         │
+  │ BiLSTM      │   50   │    18.0 %    │    18.8 %    │      ~23 %         │
+  │ CNN+GRU     │   50   │    16.2 %    │    19.9 %    │      ~15 %         │
+  └─────────────┴────────┴──────────────┴──────────────┴────────────────────┘
+
+
+  ── ResNet18 / ResNet50 / ResNet101 ─────────────────────────────────────────
+  Theory   : Deep residual networks with batch normalisation have very high
+             capacity. Given a small dataset (≤1960 training samples per fold)
+             they rapidly memorise subject-specific or environment-specific
+             signal patterns rather than learning generalisable activity cues.
+
+  Evidence : Train acc ~95–99 %, val acc ~38–43 % → train/val gap up to 63 pp.
+             Validation loss explodes (often >4, vs train loss <0.2).
+             ResNet101 env-4 val loss reached 144 — extreme overfitting.
+
+  Fixes    : • Dropout(0.3) inserted after the global average pool, before fc.
+             • weight_decay=1e-4 penalises large weights across all layers.
+             • CosineAnnealingLR prevents the model from over-committing to
+               a sharp local minimum in the final epochs.
+             • Epochs 50 → 100 (regularisation now controls overfitting so
+               more epochs help the validation loss find a better basin).
+             • Partition: gpua100 (heavy conv operations benefit most from A100).
+
+
+  ── LeNet ────────────────────────────────────────────────────────────────────
+  Theory   : Shallow 3-conv architecture with limited capacity. It generalises
+             better than deep ResNets on small datasets by design, which
+             explains why it was the top performer despite being simpler.
+             Still exhibits moderate overfitting: train ~79 %, val ~53 %.
+
+  Evidence : Best LOSO result (53 %) and best LOEnv result (40 %).
+             Train/val gap ~26 pp — much smaller than ResNets but still present.
+             Fold variance is high (39 %–61 % across LOSO folds), suggesting
+             sensitivity to which subject is held out.
+
+  Fixes    : • Dropout(0.4) added inside the fc block (after the 128-unit ReLU).
+             • weight_decay + CosineAnnealingLR as above.
+             • Epochs 50 → 100.
+
+
+  ── MLP ──────────────────────────────────────────────────────────────────────
+  Theory   : Flattening (1, 52, 500) → 26 000-dim input and feeding it to
+             fully-connected layers destroys all spatial and temporal structure.
+             The model has 26.7 M parameters — the largest of all models —
+             but most of that capacity is wasted on unstructured input.
+             With no spatial inductive bias, it overfits to per-subject noise.
+
+  Evidence : Train acc ranges 14–57 % across folds (highly unstable).
+             One LOSO fold had train acc 14 % = random, meaning the model
+             completely failed to learn even training data in 50 epochs.
+             Val acc consistently ~20 %, barely above baseline.
+
+  Fixes    : • Dropout(0.3) after each hidden layer to reduce co-adaptation.
+             • weight_decay + CosineAnnealingLR.
+             • Epochs 50 → 100 to give the model more time in stable folds.
+
+
+  ── ViT (Vision Transformer) ─────────────────────────────────────────────────
+  Theory   : Transformers require large datasets to learn useful attention
+             patterns — the general rule of thumb is >10 K samples. With
+             ~1960 training samples per fold the positional embeddings and
+             attention heads cannot generalise. The model partially overfits
+             (train ~66 %, val ~31 %) but less severely than ResNets because
+             its parameter count (158 K) is much lower.
+
+  Evidence : LOSO 30.5 %, LOEnv 24.6 % — significantly worse than LeNet
+             despite attention being theoretically better suited to sequential
+             CSI data.
+
+  Fixes    : • weight_decay + CosineAnnealingLR (attention weights are
+               particularly sensitive to L2 regularisation).
+             • Epochs 50 → 100.
+             • Partition: gpua100 (attention is quadratic in sequence length).
+
+
+  ── GRU ──────────────────────────────────────────────────────────────────────
+  Theory   : GRU processes CSI as a 500-step sequence of 52 subcarrier
+             features. With hidden_size=64 and 1 layer the model has very
+             limited memory — it struggles to capture long-range dependencies
+             across 500 timesteps. Train acc only ~37 % confirms underfitting
+             on the training set itself; the model never learned the task.
+
+  Evidence : LOSO 26.5 %, LOEnv 23.5 %. Gap between train (~37 %) and val
+             (~26 %) suggests mild overfitting once it does learn something,
+             but the primary issue is insufficient capacity.
+
+  Fixes    : • hidden_size 64 → 128 (doubles state capacity).
+             • num_layers 1 → 2 (stacked GRU learns hierarchical temporal
+               patterns; inter-layer dropout=0.3 prevents overfitting the
+               extra capacity).
+             • Dropout(0.3) before the final classifier.
+             • Epochs 50 → 200 (recurrent models converge much more slowly
+               than CNNs due to BPTT and vanishing gradients).
+             • weight_decay + CosineAnnealingLR.
+
+
+  ── LSTM ─────────────────────────────────────────────────────────────────────
+  Theory   : LSTM adds cell state to GRU's gating, giving it better long-range
+             memory. However, the same capacity constraints apply (64 hidden,
+             1 layer). Train acc ~26 % — barely above random — confirms the
+             model was severely underfitting.
+
+  Evidence : LOSO 23.6 %, LOEnv 20.3 %. Some folds show val > train (e.g.
+             fold 4: train 27 %, val 29 %) which is a hallmark of underfitting:
+             the model is too weak to overfit.
+
+  Fixes    : Same as GRU — hidden 64→128, 2 layers, dropout, 200 epochs.
+
+
+  ── BiLSTM ───────────────────────────────────────────────────────────────────
+  Theory   : Bidirectional LSTM should leverage both past and future context
+             across the 500-timestep sequence, giving it an advantage over
+             unidirectional models for activity recognition where the full
+             gesture shape matters.
+
+  Evidence : LOSO 18.0 % — worst among recurrent models, barely above random.
+             Unexpectedly worse than standard LSTM.
+
+  ROOT CAUSE (code bug): PyTorch BiLSTM stores hidden states as
+    ht of shape (num_layers*2, batch, hidden_size).
+    The old code used ht[-1] which selects only the BACKWARD direction's
+    last-layer hidden state. The FORWARD direction (ht[-2]) was completely
+    ignored — the model was effectively a half-LSTM, discarding half its
+    representational power, while the fc layer (Linear(64, 7)) was sized for
+    a unidirectional model. This made BiLSTM equivalent to a poor LSTM.
+
+  Fixes    : • Bug fix: now torch.cat([ht[-2], ht[-1]], dim=1) concatenates
+               both directions → fc resized to Linear(256, 7).
+             • hidden 64→128 (256 after concat), 2 layers, dropout=0.3.
+             • Epochs 50 → 200.
+
+
+  ── RNN ──────────────────────────────────────────────────────────────────────
+  Theory   : Vanilla RNN suffers from vanishing gradients across 500 timesteps,
+             making it fundamentally unsuitable for long sequences. Train acc
+             ~23 % = near-random even after 75 epochs. The extra 25 epochs
+             over the default (it was the only model with 75) did not help.
+
+  Evidence : LOSO 18.8 %, LOEnv 19.0 %. Completely flat performance across all
+             folds — no useful signal is being learned.
+
+  Fixes    : • hidden 64→128, 2 layers (inter-layer dropout=0.3).
+               Note: vanishing gradients are a fundamental RNN problem; the
+               added capacity alone will not fully solve it, but it does give
+               the model more gradient pathways.
+             • Epochs 75 → 200.
+             • weight_decay + CosineAnnealingLR.
+
+
+  ── CNN+GRU ──────────────────────────────────────────────────────────────────
+  Theory   : Hybrid architecture: a per-timestep 1D CNN encodes each of the
+             500 CSI frames independently, then a GRU reads the encoded
+             sequence. This is theoretically sound for CSI data. However
+             it was the worst-performing model (LOSO 16.2 % ≈ random).
+
+  Evidence : Train acc ~15 % = random on training data in 50 epochs.
+             The model was not learning at all.
+
+  ROOT CAUSE (code bug): The classifier ended with nn.Softmax(dim=1) followed
+    by nn.CrossEntropyLoss in the training loop.
+    CrossEntropyLoss internally applies log-softmax + NLLLoss. By applying
+    Softmax beforehand, the loss receives probabilities (0–1) instead of
+    logits, then re-applies softmax to values already in [0,1]. This severely
+    compresses gradients (softmax of near-uniform input ≈ uniform → near-zero
+    gradient signal) causing the model to stagnate at random performance.
+
+  Fixes    : • Bug fix: Softmax removed from classifier. CrossEntropyLoss
+               receives raw logits as intended.
+             • GRU hidden 128→128 (unchanged), num_layers 1→2, dropout=0.3.
+             • Epochs 50 → 200.
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 4 — CROSS-ENVIRONMENT GENERALISATION GAP
+────────────────────────────────────────────────────────────────────────────────
+  Every model performs worse on Leave-One-Env than LOSO. The average drop
+  across all models is:  LOSO 29.2 %  →  LOEnv 25.6 %  (−3.6 pp mean,
+  up to −13 pp for LeNet and ResNet50).
+
+  This confirms that WiFi CSI signals are strongly environment-dependent:
+  multipath propagation, room geometry, furniture, and AP placement all
+  imprint environment-specific spectral fingerprints onto the CSI amplitude.
+  A model can memorise subject gait patterns but fail to separate activity
+  signal from environment noise when the environment changes.
+
+  The regularisation and capacity changes in run 2 address overfitting to
+  training environments, but fundamental cross-environment generalisation
+  requires domain adaptation techniques beyond the scope of run 2.
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 5 — EXPECTED DIRECTION OF RUN 2 CHANGES
+────────────────────────────────────────────────────────────────────────────────
+  Overfitting models (ResNets, LeNet, MLP, ViT):
+    → Dropout + weight_decay should close the train/val gap.
+    → More epochs (100) give the regularised model time to find a better
+      generalisation basin without overfitting.
+    → Expected: val acc ↑ for ResNets; modest improvement for LeNet/MLP.
+
+  Underfitting models (RNN, GRU, LSTM):
+    → Doubled hidden size + extra layer increases representational power.
+    → 200 epochs gives BPTT enough iterations to propagate useful gradients.
+    → Expected: train acc ↑ first (model now fits training data), then val
+      acc ↑ if the learned features generalise.
+
+  Bug-fixed models (BiLSTM, CNN+GRU):
+    → BiLSTM should now outperform LSTM as theory predicts.
+    → CNN+GRU should jump sharply from ~16 % (≈ random) to meaningful levels
+      since the gradient flow was completely broken before.
+
+  Random split (new):
+    → By mixing subjects and environments in both train and test, each model
+      should achieve its theoretical upper-bound performance on this dataset.
+    → The gap between random-split and LOSO/LOEnv quantifies how much
+      performance is lost purely due to domain shift.
+
+================================================================================

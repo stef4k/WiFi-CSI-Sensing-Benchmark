@@ -1,0 +1,12 @@
+model,dataset,total_params,params_human,note
+MLP,Widar,9146262,9.15M,
+LeNet,Widar,298838,298.8K,
+ResNet18,Widar,11192375,11.19M,
+ResNet50,Widar,23583287,23.58M,
+ResNet101,Widar,42601527,42.60M,
+RNN,Widar,31254,31.3K,
+GRU,Widar,90902,90.9K,
+LSTM,Widar,120726,120.7K,
+BiLSTM,Widar,240022,240.0K,
+CNN+GRU,Widar,92238,92.2K,
+ViT,Widar,95222,95.2K,
